@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: Biro Jasa Akbar
+  VENDOR: PT Biro Jasa Akbar Berjaya
+  MAIN_CLASS: com.kelompok2.pajakform.Main
+
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            icon: packaging/logo-akbar.ico
+            suffix: windows
+          - os: macos-15-intel
+            icon: packaging/logo-akbar.icns
+            suffix: macos-intel
+          - os: macos-latest
+            icon: packaging/logo-akbar.icns
+            suffix: macos-apple-silicon
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Version from tag
+        # jpackage only accepts numeric versions, so strip the leading "v"
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build jar
+        run: mvn -B clean package
+
+      - name: Prepare jpackage input
+        # input folder must contain only the shaded jar, not original-*.jar
+        run: |
+          mkdir -p build/app out
+          cp target/biro-jasa-pajak-*.jar build/app/app.jar
+
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        run: |
+          jpackage --type app-image --name "$APP_NAME" --app-version "$VERSION" \
+            --vendor "$VENDOR" --input build/app --main-jar app.jar \
+            --main-class "$MAIN_CLASS" --icon "${{ matrix.icon }}" --dest dist
+          7z a "out/Biro-Jasa-Akbar-$VERSION-${{ matrix.suffix }}.zip" "./dist/$APP_NAME"
+          cp build/app/app.jar "out/biro-jasa-pajak-$VERSION.jar"
+
+      - name: Package macOS
+        if: runner.os == 'macOS'
+        run: |
+          jpackage --type dmg --name "$APP_NAME" --app-version "$VERSION" \
+            --vendor "$VENDOR" --input build/app --main-jar app.jar \
+            --main-class "$MAIN_CLASS" --icon "${{ matrix.icon }}" --dest dist
+          cp dist/*.dmg "out/Biro-Jasa-Akbar-$VERSION-${{ matrix.suffix }}.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.suffix }}
+          path: out/*
+
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
