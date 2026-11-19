@@ -1,6 +1,6 @@
 # Aplikasi Biro Jasa Pajak Kendaraan
 
-Aplikasi desktop Java Swing untuk pengelolaan data biro jasa pajak kendaraan. Project ini menggunakan NetBeans, Maven, MySQL/MariaDB, dan komponen `JDateChooser` dari library `jcalendar`.
+Aplikasi desktop Java Swing untuk pengelolaan data biro jasa pajak kendaraan. Project ini menggunakan NetBeans, Maven, database H2 embedded, dan komponen `JDateChooser` dari library `jcalendar`.
 
 ## Fitur Utama
 
@@ -19,70 +19,24 @@ Aplikasi desktop Java Swing untuk pengelolaan data biro jasa pajak kendaraan. Pr
 - Java 17 atau lebih baru.
 - NetBeans 21 atau versi yang kompatibel.
 - Maven.
-- MySQL/MariaDB.
 - Dependency Maven:
-  - `mysql-connector-j`
+  - `h2`
   - `jcalendar`
 
 ## Database
 
-Aplikasi membutuhkan MySQL/MariaDB yang sudah berjalan.
-
-Nama database default:
-
-```text
-biro_jasa_pajak
-```
-
-Saat aplikasi pertama kali dijalankan, class `Database` akan mencoba membuat database, tabel, kolom tambahan, dan data demo otomatis. Pastikan user MySQL yang dipakai memiliki izin untuk `CREATE DATABASE`, `CREATE TABLE`, `ALTER TABLE`, `INSERT`, `UPDATE`, `DELETE`, dan `SELECT`.
-
-## Konfigurasi Database
-
-File konfigurasi database berada di:
+Aplikasi memakai **H2 embedded**, jadi tidak perlu install MySQL atau server database apa pun.
+Saat pertama kali dibuka, aplikasi membuat file database, tabel, dan data demo otomatis di:
 
 ```text
-src/main/resources/db.properties
+~/.biro-jasa-akbar/biro_jasa_pajak.mv.db
 ```
 
-Contoh konfigurasi:
+File upload (KTP, STNK, dll) disimpan di `~/.biro-jasa-akbar/uploads/`.
+Backup data cukup dengan menyalin folder `~/.biro-jasa-akbar`. Data tiap komputer terpisah.
 
-```properties
-db.host=localhost
-db.port=3306
-db.name=biro_jasa_pajak
-db.user=root
-db.password=
-```
-
-Sesuaikan `db.user` dan `db.password` dengan MySQL di komputer Anda. Contoh jika memakai user `root` tanpa password:
-
-```properties
-db.host=localhost
-db.port=3306
-db.name=biro_jasa_pajak
-db.user=root
-db.password=
-```
-
-Konfigurasi juga bisa dioverride lewat environment variable:
-
-```text
-DB_HOST
-DB_PORT
-DB_NAME
-DB_USER
-DB_PASSWORD
-```
-
-atau lewat system property Java:
-
-```text
--Ddb.host=localhost
--Ddb.port=3306
--Ddb.name=biro_jasa_pajak
--Ddb.user=root
--Ddb.password=...
-```
+Lokasi bisa diganti lewat `src/main/resources/db.properties` (`db.dir`), environment
+variable `DB_DIR`, atau system property `-Ddb.dir=/path/folder`.
 
 ## Cara Membuka di NetBeans
 
@@ -90,10 +44,8 @@ atau lewat system property Java:
 2. Buka NetBeans.
 3. Pilih **File > Open Project**.
 4. Pilih folder project ini.
-5. Pastikan MySQL/MariaDB sudah berjalan.
-6. Sesuaikan `src/main/resources/db.properties`.
-7. Klik kanan project > **Clean and Build**.
-8. Klik **Run Project**.
+5. Klik kanan project > **Clean and Build**.
+6. Klik **Run Project**.
 
 Main class:
 
@@ -118,7 +70,7 @@ java -jar target/biro-jasa-pajak-1.0.0.jar
 Contoh run sambil override konfigurasi database:
 
 ```bash
-java -Ddb.user=root -Ddb.password= -jar target/biro-jasa-pajak-1.0.0.jar
+java -Ddb.dir=/path/folder-data -jar target/biro-jasa-pajak-1.0.0.jar
 ```
 
 ## Build .exe untuk Windows

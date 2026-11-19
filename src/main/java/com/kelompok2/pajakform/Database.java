@@ -1,11 +1,11 @@
 package com.kelompok2.pajakform;
 
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
 import javax.swing.JOptionPane;
@@ -14,6 +14,9 @@ import javax.swing.JOptionPane;
  * JDBC bootstrap: create database and tables, then seed empty tables.
  */
 public final class Database {
+
+    /** Folder data aplikasi di home user: file database dan upload disimpan di sini. */
+    public static final Path DATA_DIR = Paths.get(System.getProperty("user.home"), ".biro-jasa-akbar");
 
     private Database() {
     }
@@ -35,9 +38,9 @@ public final class Database {
 
     public static void init() {
         try {
-            Class.forName("com.mysql.cj.jdbc.Driver");
+            Class.forName("org.h2.Driver");
         } catch (ClassNotFoundException e) {
-            fatal("Driver MySQL tidak ditemukan di classpath.", e);
+            fatal("Driver H2 tidak ditemukan di classpath.", e);
         }
 
         try {
@@ -48,27 +51,18 @@ public final class Database {
                 }
             }
 
-            String host = resolveProp(file, "db.host", "DB_HOST", "localhost");
-            String port = resolveProp(file, "db.port", "DB_PORT", "3306");
+            String dir = resolveProp(file, "db.dir", "DB_DIR", DATA_DIR.toString());
             String name = resolveProp(file, "db.name", "DB_NAME", "biro_jasa_pajak");
-            dbUser = resolveProp(file, "db.user", "DB_USER", "root");
+            dbUser = resolveProp(file, "db.user", "DB_USER", "sa");
             dbPassword = resolveProp(file, "db.password", "DB_PASSWORD", "");
 
-            String params = "?serverTimezone=Asia/Jakarta&useUnicode=true&characterEncoding=utf8"
-                    + "&allowPublicKeyRetrieval=true&useSSL=false";
-            String baseUrl = "jdbc:mysql://" + host + ":" + port + "/";
-
-            try (Connection conn = DriverManager.getConnection(baseUrl + params, dbUser, dbPassword);
-                    Statement st = conn.createStatement()) {
-                st.executeUpdate("CREATE DATABASE IF NOT EXISTS `" + escIdent(name)
-                        + "` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-            }
-
-            jdbcUrlWithDatabase = baseUrl + name + params;
+            Files.createDirectories(Paths.get(dir));
+            // H2 creates the file on first connect; MySQL mode keeps backticks/LIMIT/IFNULL working
+            jdbcUrlWithDatabase = "jdbc:h2:file:" + Paths.get(dir, name).toAbsolutePath()
+                    + ";MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE";
 
             try (Connection conn = getConnection()) {
                 createTables(conn);
-                migrateSchema(conn);
 
                 IdGenerator.bootstrapFromDb(conn, "USR", "users");
                 IdGenerator.bootstrapFromDb(conn, PelangganStore.PREFIX, PelangganStore.TABLE);
@@ -90,10 +84,6 @@ public final class Database {
         }
     }
 
-    private static String escIdent(String name) {
-        return name.replace("`", "``");
-    }
-
     private static void createTables(Connection conn) throws Exception {
         try (Statement st = conn.createStatement()) {
             st.executeUpdate("""
@@ -103,7 +93,7 @@ public final class Database {
                       password VARCHAR(128) NOT NULL,
                       nama_lengkap VARCHAR(128),
                       status VARCHAR(16) NOT NULL
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""");
+                    )""");
 
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pelanggan (
@@ -112,7 +102,7 @@ public final class Database {
                       alamat TEXT,
                       no_hp VARCHAR(32),
                       operator VARCHAR(64)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""");
+                    )""");
 
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS kendaraan (
@@ -125,7 +115,7 @@ public final class Database {
                       operator VARCHAR(64),
                       CONSTRAINT fk_kendaraan_pelanggan FOREIGN KEY (id_pelanggan) REFERENCES pelanggan(id)
                         ON UPDATE CASCADE ON DELETE RESTRICT
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""");
+                    )""");
 
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pembayaran_pajak (
@@ -141,7 +131,7 @@ public final class Database {
                       operator VARCHAR(64),
                       CONSTRAINT fk_pembayaran_kendaraan FOREIGN KEY (kendaraan_id) REFERENCES kendaraan(id)
                         ON UPDATE CASCADE ON DELETE RESTRICT
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""");
+                    )""");
 
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS balik_nama (
@@ -170,7 +160,7 @@ public final class Database {
                       file_kwitansi VARCHAR(255),
                       catatan TEXT,
                       operator VARCHAR(64)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""");
+                    )""");
 
             st.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS monitoring (
@@ -180,122 +170,7 @@ public final class Database {
                       status_proses VARCHAR(32),
                       tanggal DATETIME,
                       operator VARCHAR(64)
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""");
-        }
-    }
-
-    private static boolean columnExists(Connection conn, String table, String column) throws SQLException {
-        String sql = "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, table);
-            ps.setString(2, column);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
-    private static boolean foreignKeyExists(Connection conn, String fkName) throws SQLException {
-        String sql = "SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY' LIMIT 1";
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, fkName);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next();
-            }
-        }
-    }
-
-    private static void addForeignKeyIfMissing(Connection conn, String fkName, String table, String column,
-            String refTable, String refColumn) throws SQLException {
-        if (foreignKeyExists(conn, fkName)) {
-            return;
-        }
-        String sql = "ALTER TABLE `" + escIdent(table) + "` ADD CONSTRAINT `" + escIdent(fkName) + "` FOREIGN KEY (`"
-                + escIdent(column) + "`) REFERENCES `" + escIdent(refTable) + "` (`" + escIdent(refColumn) + "`) ON UPDATE CASCADE ON DELETE RESTRICT";
-        try (Statement st = conn.createStatement()) {
-            st.executeUpdate(sql);
-        } catch (SQLException e) {
-            // Tabel lama mungkin masih berisi data tidak konsisten; biarkan aplikasi tetap jalan.
-            e.printStackTrace();
-        }
-    }
-
-    private static void migrateSchema(Connection conn) throws SQLException {
-        conn.setAutoCommit(false);
-        try (Statement st = conn.createStatement()) {
-            if (!columnExists(conn, "kendaraan", "file_stnk")) {
-                st.executeUpdate("ALTER TABLE kendaraan ADD COLUMN file_stnk VARCHAR(255) NULL");
-            }
-            /* Pastikan setiap kendaraan punya pelanggan sebelum NOT NULL / FK */
-            st.executeUpdate("""
-                    UPDATE kendaraan k
-                    SET id_pelanggan = (SELECT id FROM (SELECT id FROM pelanggan ORDER BY id LIMIT 1) t)
-                    WHERE (k.id_pelanggan IS NULL OR TRIM(k.id_pelanggan) = '')
-                      AND EXISTS (SELECT 1 FROM pelanggan p)
-                    """);
-
-            if (!columnExists(conn, "pembayaran_pajak", "kendaraan_id")) {
-                st.executeUpdate("ALTER TABLE pembayaran_pajak ADD COLUMN kendaraan_id VARCHAR(32) NULL");
-            }
-
-            if (columnExists(conn, "pembayaran_pajak", "no_polisi")) {
-                st.executeUpdate("""
-                        UPDATE pembayaran_pajak p
-                        INNER JOIN kendaraan k
-                          ON TRIM(UPPER(IFNULL(p.no_polisi,''))) = TRIM(UPPER(IFNULL(k.no_polisi,'')))
-                        SET p.kendaraan_id = k.id
-                        WHERE p.kendaraan_id IS NULL OR TRIM(p.kendaraan_id) = ''
-                        """);
-                st.executeUpdate("""
-                        UPDATE pembayaran_pajak p
-                        SET p.kendaraan_id = (SELECT id FROM (SELECT id FROM kendaraan ORDER BY id LIMIT 1) t)
-                        WHERE (p.kendaraan_id IS NULL OR TRIM(p.kendaraan_id) = '')
-                          AND EXISTS (SELECT 1 FROM kendaraan k3)
-                        """);
-            }
-
-            if (columnExists(conn, "pembayaran_pajak", "file_stnk") && columnExists(conn, "kendaraan", "file_stnk")) {
-                st.executeUpdate("""
-                        UPDATE kendaraan k
-                        INNER JOIN pembayaran_pajak p ON p.kendaraan_id = k.id
-                        SET k.file_stnk = p.file_stnk
-                        WHERE (k.file_stnk IS NULL OR TRIM(k.file_stnk) = '')
-                          AND p.file_stnk IS NOT NULL AND TRIM(p.file_stnk) != ''
-                        """);
-            }
-
-            if (columnExists(conn, "pembayaran_pajak", "nama_pemilik")) {
-                st.executeUpdate("ALTER TABLE pembayaran_pajak DROP COLUMN nama_pemilik");
-            }
-            if (columnExists(conn, "pembayaran_pajak", "file_stnk")) {
-                st.executeUpdate("ALTER TABLE pembayaran_pajak DROP COLUMN file_stnk");
-            }
-            if (columnExists(conn, "pembayaran_pajak", "no_polisi")) {
-                st.executeUpdate("ALTER TABLE pembayaran_pajak DROP COLUMN no_polisi");
-            }
-
-            try {
-                st.executeUpdate("ALTER TABLE kendaraan MODIFY COLUMN id_pelanggan VARCHAR(32) NOT NULL");
-            } catch (SQLException e) {
-                e.printStackTrace();
-            }
-            if (columnExists(conn, "pembayaran_pajak", "kendaraan_id")) {
-                try {
-                    st.executeUpdate("ALTER TABLE pembayaran_pajak MODIFY COLUMN kendaraan_id VARCHAR(32) NOT NULL");
-                } catch (SQLException e) {
-                    e.printStackTrace();
-                }
-            }
-
-            addForeignKeyIfMissing(conn, "fk_kendaraan_pelanggan", "kendaraan", "id_pelanggan", "pelanggan", "id");
-            addForeignKeyIfMissing(conn, "fk_pembayaran_kendaraan", "pembayaran_pajak", "kendaraan_id", "kendaraan", "id");
-
-            conn.commit();
-        } catch (SQLException e) {
-            conn.rollback();
-            throw e;
-        } finally {
-            conn.setAutoCommit(true);
+                    )""");
         }
     }
 

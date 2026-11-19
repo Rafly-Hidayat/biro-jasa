@@ -75,7 +75,7 @@ public final class FileUploader {
         }
 
         try {
-            Path targetDir = Paths.get(ROOT, subFolder);
+            Path targetDir = Database.DATA_DIR.resolve(ROOT).resolve(subFolder);
             Files.createDirectories(targetDir);
 
             String stamp = LocalDateTime.now().format(STAMP);
@@ -220,7 +220,7 @@ public final class FileUploader {
             return null;
         }
         String trimmed = relativePath.startsWith("/") ? relativePath.substring(1) : relativePath;
-        File file = new File(trimmed);
+        File file = Database.DATA_DIR.resolve(trimmed).toFile();
         if (!file.isFile()) {
             JOptionPane.showMessageDialog(parent,
                     "File tidak ditemukan:\n" + relativePath + "\n\n"
