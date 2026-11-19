@@ -1,0 +1,22 @@
+# Maven / build output
+target/
+build/
+dist/
+*.class
+*.jar
+
+# Runtime uploads (customer KTP/STNK documents)
+uploads/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+nbproject/private/
+nbactions.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+docs/
